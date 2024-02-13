@@ -4,6 +4,8 @@ import os
 import shutil
 import glob
 import re
+import zipfile
+from io import BytesIO
 
 
 # Funktion zum Lesen der CSV-Datei mit ISO-8859-1 Kodierung
@@ -77,20 +79,53 @@ def process_csv_files(transformed_path):
                     st.error(f"Die Datei {file} im Ordner {root} konnte nicht gelesen werden.")
 
 
-# Streamlit App Definition
+def unzip_files(zip_file, extract_to):
+    """Entpackt die ZIP-Datei in den angegebenen Ordner."""
+    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+
+def zip_files(directory, zip_name):
+    """Erstellt eine ZIP-Datei aus dem angegebenen Ordner."""
+    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                zipf.write(os.path.join(root, file), 
+                           os.path.relpath(os.path.join(root, file), 
+                                           os.path.join(directory, '..')))
+
+
+
 def main():
     st.title('CSV Koordinatentransformations-Tool')
 
-    # Eingabefeld für den Quellpfad
-    src_path = st.text_input('Geben Sie den Quellpfad ein (z.B. "E:/MaisNet_import Files"):')
-
-    # Button zum Starten der Transformation
-    if st.button('Starte Transformation'):
-        if src_path:  # Nur fortfahren, wenn ein Pfad eingegeben wurde
-            transformed_path = copy_structure(src_path)
-            process_csv_files(transformed_path)  # Hier wird 'st' nicht mehr als Argument übergeben
-        else:
-            st.error("Bitte geben Sie einen gültigen Quellpfad ein.")
+    uploaded_file = st.file_uploader("Wählen Sie eine ZIP-Datei aus", type="zip")
+    if uploaded_file is not None:
+        # Temporäres Verzeichnis für das Entpacken
+        extract_to = "temp_dir"
+        os.makedirs(extract_to, exist_ok=True)
+        
+        # Entpacken der ZIP-Datei
+        unzip_files(uploaded_file, extract_to)
+        
+        # Verarbeiten der CSV-Dateien
+        process_csv_files(extract_to)
+        
+        # ZIP-Datei mit transformierten Daten erstellen
+        zip_name = "transformed_data.zip"
+        zip_files(extract_to, zip_name)
+        
+        # ZIP-Datei zum Download anbieten
+        with open(zip_name, "rb") as f:
+            bytes = f.read()
+            b_io = BytesIO(bytes)
+            st.download_button(label="Download ZIP mit transformierten Daten",
+                               data=b_io,
+                               file_name=zip_name,
+                               mime="application/zip")
+        
+        # Aufräumen: Temporäres Verzeichnis und ZIP-Datei löschen
+        shutil.rmtree(extract_to)
+        os.remove(zip_name)
 
 if __name__ == "__main__":
     main()
